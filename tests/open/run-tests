@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Make sure to clean up our test artifacts
+trap 'rm -f test.in test.out test.err' 0 1 2 3 15
+
+# Generate some arbitrary known input
+echo foo >test.in
+
+# Run the test
+LD_PRELOAD=${LIB?} \
+./open2 test.in >test.out 2>test.err
+
+# Verify that our `open' function was called
+grep -q '<intercepted>' test.err
+
+# Verify that the `open' syscall ran successfully
+cmp -s test.in test.out
