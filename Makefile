@@ -27,7 +27,7 @@ $(LIB): $(OBJ)
 
 .PHONY: test
 test:
-	cd tests && $(MAKE) LIB=../$(LIB) test
+	cd tests && $(MAKE) LIB=$(abspath $(LIB)) test
 
 ### Installation ###
 

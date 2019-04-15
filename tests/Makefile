@@ -13,7 +13,7 @@ $1:
 
 .PHONY: test-$1
 test-$1: $1
-	$1/run-tests
+	cd $1 && ./run-tests
 	@echo '==> SUCCESS'
 UNIT_TESTS += test-$1
 
