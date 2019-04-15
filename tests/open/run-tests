@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -ex
 
 # Make sure to clean up our test artifacts
 trap 'rm -f test.in test.out test.err' 0 1 2 3 15
