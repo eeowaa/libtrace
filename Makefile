@@ -44,7 +44,7 @@ LIBDIR := $(PREFIX)/lib
 
 .PHONY: install
 install:
-	$(INSTALL) $(LIBDIR)/$(LIB)
+	$(INSTALL) $(LIB) $(LIBDIR)/$(LIB)
 
 .PHONY: installcheck
 installcheck:
