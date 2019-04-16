@@ -34,7 +34,11 @@
 # TODO items
 
 - `[X]` Fix and clean up scaffolding for testing
-- `[ ]` Support for 3-arg `open` syscall
+- `[X]` Finish documentation
+
+## `open.c`
+
+- `[X]` Support for 3-arg `open` syscall
 - `[ ]` Preprocessor macro for path of interest passed to `open` syscall
-- `[ ]` File-based logging of `open` syscalls
-- `[-]` Finish documentation
+- `[ ]` _Maybe_: Log `open` syscalls to a file rathan than `stderr`
+- `[ ]` _Maybe_: Use something faster than `fprintf` for logging

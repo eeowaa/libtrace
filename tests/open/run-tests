@@ -11,7 +11,7 @@ LD_PRELOAD=${LIB?} \
 ./open2 test.in >test.out 2>test.err
 
 # Verify that our `open' function was called
-grep -q '<intercepted>' test.err
+grep -q '^\[TRACE\] test.in' test.err
 
 # Verify that the `open' syscall ran successfully
 cmp -s test.in test.out

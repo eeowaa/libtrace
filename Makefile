@@ -14,6 +14,10 @@ export UNITS := $(OBJ:.o=)
 CC := gcc -c
 LD := ld
 
+ifdef DEBUG
+CFLAGS += -g
+endif
+
 .PHONY: all
 all: $(LIB)
 
