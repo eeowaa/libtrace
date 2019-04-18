@@ -6,12 +6,15 @@ trap 'rm -f test.in test.out test.err' 0 1 2 3 15
 # Generate some arbitrary known input
 echo foo >test.in
 
-# Run the test
-LD_PRELOAD=${LIB?} \
-./open2 test.in >test.out 2>test.err
+# Run the tests
+for x in 2 3
+do
+    LD_PRELOAD=${LIB?} \
+    ./open-with-arity -$x test.in >test.out 2>test.err
 
-# Verify that our `open' function was called
-grep -q '^\[TRACE\] test.in' test.err
+    # Verify that our `open' function was called
+    grep -q '^\[TRACE\] test.in' test.err
 
-# Verify that the `open' syscall ran successfully
-cmp -s test.in test.out
+    # Verify that the `open' syscall ran successfully
+    cmp -s test.in test.out
+done
