@@ -2,14 +2,12 @@ SRC := $(wildcard *.c)
 EXE := $(SRC:.c=)
 CC := gcc
 
-ifdef DEBUG
-CFLAGS += -g
-endif
+override CFLAGS += -Wall -Werror $(and $(DEBUG),-g)
 
 .PHONY: all
 all: $(EXE)
 %: %.c
-	$(CC) -Wall -Werror $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $<
 
 .PHONY: clean
 clean:

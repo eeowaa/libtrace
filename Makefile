@@ -14,18 +14,17 @@ UNITS := $(OBJ:.o=)
 CC := gcc -c
 LD := ld
 
-ifdef DEBUG
-CFLAGS += -g
-endif
+override CFLAGS += -Wall -Werror -fpic $(and $(DEBUG),-g)
+override LDFLAGS += --fatal-warnings -shared
 
 .PHONY: all
 all: $(LIB)
 
 $(LIB): $(OBJ)
-	$(LD) --fatal-warnings -shared $(LDFLAGS) -o $@ $<
+	$(LD) $(LDFLAGS) -o $@ $<
 
 %.o: %.c
-	$(CC) -Wall -Werror -fpic $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $<
 
 ### Testing ###
 
