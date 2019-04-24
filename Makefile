@@ -21,7 +21,7 @@ override LDFLAGS += --fatal-warnings -shared
 all: $(LIB)
 
 $(LIB): $(OBJ)
-	$(LD) $(LDFLAGS) -o $@ $<
+	$(LD) $(LDFLAGS) -o $@ $(OBJ)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ $<
@@ -33,7 +33,7 @@ execve.o: execve.c
 
 .PHONY: test
 test:
-	cd tests && $(MAKE) LIB=$(abspath $(LIB)) UNITS=$(UNITS) test
+	cd tests && $(MAKE) LIB=$(abspath $(LIB)) UNITS='$(UNITS)' test
 
 ### Installation ###
 
