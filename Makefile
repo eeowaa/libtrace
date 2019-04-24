@@ -7,7 +7,7 @@ LIB := lib$(LIBNAME).so
 
 SRC := $(wildcard *.c)
 OBJ := $(SRC:.c=.o)
-export UNITS := $(OBJ:.o=)
+UNITS := $(OBJ:.o=)
 
 ### Building ###
 
@@ -31,7 +31,7 @@ $(LIB): $(OBJ)
 
 .PHONY: test
 test:
-	cd tests && $(MAKE) LIB=$(abspath $(LIB)) test
+	cd tests && $(MAKE) LIB=$(abspath $(LIB)) UNITS=$(UNITS) test
 
 ### Installation ###
 
