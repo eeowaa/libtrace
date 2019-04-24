@@ -42,3 +42,8 @@
 - `[ ]` Preprocessor macro for path of interest passed to `open` syscall
 - `[ ]` _Maybe_: Log `open` syscalls to a file rathan than `stderr`
 - `[ ]` _Maybe_: Use something faster than `fprintf` for logging
+
+## `execve.c`
+
+- `[ ]` Fix `installcheck` rule (currently does **not** test against the
+        installed library)
