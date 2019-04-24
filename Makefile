@@ -26,6 +26,9 @@ $(LIB): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+execve.o: execve.c
+	$(CC) -DLIBNAME=$(LIBNAME) -DLIBDIR=$(PREFIX)/lib $(CFLAGS) -o $@ $<
+
 ### Testing ###
 
 .PHONY: test
