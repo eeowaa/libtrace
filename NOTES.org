@@ -1,0 +1,281 @@
+- https://stackoverflow.com/questions/426230/what-is-the-ld-preload-trick
+- http://man7.org/linux/man-pages/man2/open.2.html
+- http://man7.org/linux/man-pages/man2/syscall.2.html
+  - /usr/include/sys/syscall.h
+    - /usr/include/asm/unistd.h
+
+:DETERMINE_SYSCALL_HEADER:
+#+NAME: arch_test.c
+#+BEGIN_SRC c
+#include <stdio.h>
+
+int main(void)
+{
+#ifdef __i386__
+        puts("<asm/unistd_32.h>");
+#elif defined(__ILP32__)
+        puts("<asm/unistd_x32.h>");
+#else
+        puts("<asm/unistd_64.h>");
+#endif
+        return 0;
+}
+#+END_SRC
+
+#+BEGIN_SRC sh
+gcc arch_test.c
+./a.out
+#+END_SRC
+
+#+RESULT:
+#+BEGIN_EXAMPLE
+<asm/unistd_64.h>
+#+END_EXAMPLE
+:END:
+
+In any case, the best course of action is probably to use just
+~__NR_open~, since that is the macro constant used to refer to the
+~open~ system call regardless of architecture.
+
+: syscall(__NR_open, ...)
+
+So, before we can implement the ~LD_PRELOAD~ trick, we need to
+understand how ~open~ is defined.  Strangely, it has two function
+prototypes.
+
+The following StackExchange answer has some insight into that
+phenomenon: \\
+https://unix.stackexchange.com/questions/797/how-can-i-find-the-implementations-of-linux-kernel-system-calls
+#+BEGIN_QUOTE
+Another bit of evidence that things are a little weird here is that
+there isn't always a strict parameter list for system calls: open(2),
+for instance, can take either 2 or 3 parameters. That means open(2) is
+overloaded, a feature of C++, not C, yet the syscall interface is
+C-compatible. (This is not the same thing as C's varargs feature,
+which allows a single function to take a variable number of
+arguments.)
+#+END_QUOTE
+
+Note that the ~asmlinkage~ function call has been replaced by a call
+to the ~SYSCALL_DEFINE3~ macro: \\
+https://github.com/torvalds/linux/commit/ca013e945b1ba5828b151ee646946f1297b67a4c#diff-a487c0815879371669626c7f7a08c1b0L1051
+
+I'm still having a bit of trouble understanding /how/ ~open~ is
+implemented (seems like it might be implemented in x86_64 assembly),
+and I got to wondering if it ended up using some "new" C language
+feature that allows function overloading to some degree.  However, the
+following document makes it clear that it is compiled using ~gcc
+-std=gnu89~: \\
+https://www.kernel.org/doc/html/latest/process/programming-language.html
+
+In the end, it looks like the macros resolve to actual functions.
+Here's generally how it works (with an example of ~read~): \\
+https://lwn.net/Articles/604287/
+
+Linux source tree links:
+- https://github.com/torvalds/linux/blob/master/include/linux/syscalls.h
+- https://github.com/torvalds/linux/blob/master/fs/open.c#L1082
+- https://github.com/torvalds/linux/blob/master/fs/open.c#L1054
+
+#+CAPTION: Definition of SYSCALL_DEFINE3
+#+BEGIN_SRC c
+/*
+ * __MAP - apply a macro to syscall arguments
+ * __MAP(n, m, t1, a1, t2, a2, ..., tn, an) will expand to
+ *    m(t1, a1), m(t2, a2), ..., m(tn, an)
+ * The first argument must be equal to the amount of type/name
+ * pairs given.  Note that this list of pairs (i.e. the arguments
+ * of __MAP starting at the third one) is in the same format as
+ * for SYSCALL_DEFINE<n>/COMPAT_SYSCALL_DEFINE<n>
+ */
+#define __MAP0(m,...)
+#define __MAP1(m,t,a,...) m(t,a)
+#define __MAP2(m,t,a,...) m(t,a), __MAP1(m,__VA_ARGS__)
+#define __MAP3(m,t,a,...) m(t,a), __MAP2(m,__VA_ARGS__)
+#define __MAP4(m,t,a,...) m(t,a), __MAP3(m,__VA_ARGS__)
+#define __MAP5(m,t,a,...) m(t,a), __MAP4(m,__VA_ARGS__)
+#define __MAP6(m,t,a,...) m(t,a), __MAP5(m,__VA_ARGS__)
+#define __MAP(n,...) __MAP##n(__VA_ARGS__)
+
+#define __SC_DECL(t, a) t a
+#define __TYPE_AS(t, v)	__same_type((__force t)0, v)
+#define __TYPE_IS_L(t)	(__TYPE_AS(t, 0L))
+#define __TYPE_IS_UL(t)	(__TYPE_AS(t, 0UL))
+#define __TYPE_IS_LL(t) (__TYPE_AS(t, 0LL) || __TYPE_AS(t, 0ULL))
+#define __SC_LONG(t, a) __typeof(__builtin_choose_expr(__TYPE_IS_LL(t), 0LL, 0L)) a
+#define __SC_CAST(t, a)	(__force t) a
+#define __SC_ARGS(t, a)	a
+#define __SC_TEST(t, a) (void)BUILD_BUG_ON_ZERO(!__TYPE_IS_LL(t) && sizeof(t) > sizeof(long))
+
+/*
+ * The asmlinkage stub is aliased to a function named __se_sys_*() which
+ * sign-extends 32-bit ints to longs whenever needed. The actual work is
+ * done within __do_sys_*().
+ */
+#ifndef __SYSCALL_DEFINEx
+#define __SYSCALL_DEFINEx(x, name, ...)					\
+	__diag_push();							\
+	__diag_ignore(GCC, 8, "-Wattribute-alias",			\
+		      "Type aliasing is used to sanitize syscall arguments");\
+	asmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))	\
+		__attribute__((alias(__stringify(__se_sys##name))));	\
+	ALLOW_ERROR_INJECTION(sys##name, ERRNO);			\
+	static inline long __do_sys##name(__MAP(x,__SC_DECL,__VA_ARGS__));\
+	asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__));	\
+	asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__))	\
+	{								\
+		long ret = __do_sys##name(__MAP(x,__SC_CAST,__VA_ARGS__));\
+		__MAP(x,__SC_TEST,__VA_ARGS__);				\
+		__PROTECT(x, ret,__MAP(x,__SC_ARGS,__VA_ARGS__));	\
+		return ret;						\
+	}								\
+	__diag_pop();							\
+	static inline long __do_sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))
+#endif /* __SYSCALL_DEFINEx */
+
+#define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)
+#+END_SRC
+
+#+CAPTION: Macro expansion of SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+#+BEGIN_SRC c
+/*           x = 3
+ *        name = open
+ * __VA_ARGS__ = [0] const char __user *
+ *               [1] filename
+ *               [2] int
+ *               [3] flags
+ *               [4] umode_t
+ *               [5] mode
+ */
+
+__diag_push();
+__diag_ignore(GCC, 8, "-Wattribute-alias",
+	      "Type aliasing is used to sanitize syscall arguments");
+
+/* Make `sys_open' an alias to `__se_sys_open' */
+asmlinkage long
+sys_open(const char __user *filename, int flags, umode_t mode)
+__attribute__((alias("__se_sys_open")));
+
+ALLOW_ERROR_INJECTION(sys_open, ERRNO);
+
+/* Forward declaration for `__do_sys_open' */
+static inline long
+__do_sys_open(const char __user *filename, int flags, umode_t mode);
+
+/* Forward declaration for `__se_sys_open' (PARTIALLY EXPANDED).
+ * Note that `__builtin_choose_expr' is like the ternary operator.
+ */
+asmlinkage long
+__se_sys_open(__typeof(
+                __builtin_choose_expr(
+                  (
+                    __same_type((__force const char __user *)0, 0LL) ||
+                    __same_type((__force const char __user *)0, 0ULL)
+                  ),
+                  0LL,
+                  0L
+                )
+              ) filename,
+              __typeof(
+                __builtin_choose_expr(
+                  (
+                    __same_type((__force int)0, 0LL) ||
+                    __same_type((__force int)0, 0ULL)
+                  ),
+                  0LL,
+                  0L
+                )
+              ) flags,
+              __typeof(
+                __builtin_choose_expr(
+                  (
+                    __same_type((__force umode_t)0, 0LL) ||
+                    __same_type((__force umode_t)0, 0ULL)
+                  ),
+                  0LL,
+                  0L
+                )
+              ) mode);
+
+/* Definition of `__se_sys_open' (FULLY EXPANDED) */
+asmlinkage long
+__se_sys_open(const char __user *filename, int flags, umode_t mode)
+{
+	long ret = __do_sys_open(const char __user *filename, int flags, umode_t mode);
+
+	const char __user *filename, int flags, umode_t mode;
+
+	__PROTECT(3, ret, const char __user *filename, int flags, umode_t mode);
+	return ret;
+}
+__diag_pop();
+
+static inline long
+__do_sys_open(const char __user *filename, int flags, umode_t mode)
+{
+	if (force_o_largefile())
+		flags |= O_LARGEFILE;
+
+	return do_sys_open(AT_FDCWD, filename, flags, mode);
+}
+#+END_SRC
+
+In order to expand ~__SC_LONG~, we need to to run the following on an
+Amazon Linux instance:
+
+#+NAME: type_test.c
+#+BEGIN_SRC c
+#include <stdio.h>
+#include <linux/compiler.h>
+
+int main(void)
+{
+	printf("const char __user *\n0LL: %d\n0ULL: %d\n\n",
+               __same_type((__force const char __user *)0, 0LL),
+	       __same_type((__force const char __user *)0, 0ULL));
+
+	printf("int\n0LL: %d\n0ULL: %d\n\n",
+               __same_type((__force int)0, 0LL),
+	       __same_type((__force int)0, 0ULL));
+
+	printf("umode_t\n0LL: %d\n0ULL: %d\n\n",
+               __same_type((__force umode_t)0, 0LL),
+	       __same_type((__force umode_t)0, 0ULL));
+
+	return 0;
+}
+#+END_SRC
+
+#+BEGIN_SRC sh
+sudo yum install kernel-devel
+gcc type_test.c
+./a.out
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+TODO TODO TODO
+#+END_EXAMPLE
+
+https://github.com/torvalds/linux/blob/master/tools/include/linux/compiler.h
+
+Taking a step back here... The entire reason why I've been trying to
+get at the source of ~open~ is so that I could see how it implemented
+overloaded prototypes.  One reason for doing that is to avoid using a
+variadic function as a wrapper, because I thought that doing so would
+incur a constant /O(1)/ performance penalty.  However, a performance
+penalty might not even exist (something to strongly consider): \\
+https://www.reddit.com/r/C_Programming/comments/4sfcpm/are_variadic_functions_computationally_expensive/
+
+Another performance penalty: If we are doing pathname comparisons
+*every time* we perform an ~open~, we incur a linear /O(n)/ penalty
+(string comparison is a /O(n)/ problem).  However, when comparing
+against a constant path string, we do have a constant worst-case...
+Still probably /O(n)/, but pretty close to /O(1)/.
+
+Another reason for understanding the source would be to see if there
+were any intermediate functions that are called from other places.  If
+so, then we might want to wrap a function one level deeper than the
+system call.  *Yes, this could open a huge can of worms*!
+
+- [ ] Look into VFS (might be a good top-level entry point)
